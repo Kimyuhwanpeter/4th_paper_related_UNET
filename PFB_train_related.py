@@ -21,7 +21,7 @@ FLAGS = easydict.EasyDict({"img_size": 512,
                            
                            "image_path": "D:/[1]DB/[5]4th_paper_DB/crop_weed/CropWeed Field Image Dataset (CWFID)/dataset-1.0/aug_train_images/",
                            
-                           "pre_checkpoint": True,
+                           "pre_checkpoint": False,
                            
                            "pre_checkpoint_path": "C:/Users/Yuhwan/Downloads/154/154",
                            
@@ -45,7 +45,7 @@ FLAGS = easydict.EasyDict({"img_size": 512,
 
                            "test_images": "D:/[1]DB/[5]4th_paper_DB/crop_weed/V2/test_images_CWFID",
 
-                           "train": False})
+                           "train": True})
 
 
 optim = tf.keras.optimizers.Adam(FLAGS.lr, beta_1=0.9, beta_2=0.99)
@@ -223,7 +223,7 @@ def main():
                 batch_labels = np.where(batch_labels == 128, 1, batch_labels)
 
                 crop_labels = np.where(batch_labels == 1, 1, 0)
-                weed_labels = np.where(batch_labels == 0, 1, 0)  
+                weed_labels = np.where(batch_labels == 0, 1, 0)
 
                 crop_labels = np.squeeze(crop_labels, -1)
                 weed_labels = np.squeeze(weed_labels, -1)
@@ -235,25 +235,31 @@ def main():
                 if count % 100 == 0:
 
                     logits = run_model(model, batch_images, False)
-                    images = tf.nn.sigmoid(logits[:, :, :, 0:1])
+                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
+                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
                     for i in range(FLAGS.batch_size):
-                        image = images[i]
-                        label = batch_labels[i]
-                        image = np.where(image.numpy() >= 0.5, 1, 0)
-                        ignore_void_idx = np.where(label==2) # 2 is void label
-                        temp_img = image
-                        temp_img[ignore_void_idx] = 2
+                        crop_image = crop_images[i]
+                        weed_image = weed_images[i]
+                        crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
+                        weed_image = np.where(weed_image.numpy() >= 0.5, 2, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
 
-                        pred_mask_color = color_map[temp_img]  # 논문그림처럼 할것!
+                        predict_image = np.where(crop_image == 1, 0, 2) # 이건 출력할때 쓰는것
+                        predict_image = np.where(weed_image == 2, 1, predict_image)    # 이건 출력할때 쓰는것
+
+                        label = batch_labels[i]
+                        
+                        pred_mask_color = color_map[predict_image]  # 논문그림처럼 할것!
                         pred_mask_color = np.squeeze(pred_mask_color, 2)
+                        
                         label = np.expand_dims(label, -1)
                         label = np.concatenate((label, label, label), -1)
                         label_mask_color = np.zeros([FLAGS.img_size, FLAGS.img_size, 3], dtype=np.uint8)
                         label_mask_color = np.where(label == np.array([0,0,0], dtype=np.uint8), np.array([255, 0, 0], dtype=np.uint8), label_mask_color)
                         label_mask_color = np.where(label == np.array([1,1,1], dtype=np.uint8), np.array([0, 0, 255], dtype=np.uint8), label_mask_color)
 
+                        temp_img = predict_image
                         temp_img = np.concatenate((temp_img, temp_img, temp_img), -1)
-                        image = np.concatenate((image, image, image), -1)
+                        image = np.concatenate((predict_image, predict_image, predict_image), -1)
                         pred_mask_warping = np.where(temp_img == np.array([2,2,2], dtype=np.uint8), print_images[i], image)
                         pred_mask_warping = np.where(temp_img == np.array([0,0,0], dtype=np.uint8), np.array([255, 0, 0], dtype=np.uint8), pred_mask_warping)
                         pred_mask_warping = np.where(temp_img == np.array([1,1,1], dtype=np.uint8), np.array([0, 0, 255], dtype=np.uint8), pred_mask_warping)
@@ -278,36 +284,31 @@ def main():
                 batch_labels = tf.squeeze(batch_labels, -1)
                 for j in range(FLAGS.batch_size):
                     batch_image = tf.expand_dims(batch_images[j], 0)
-                    logits = run_model(model, batch_image, False) # type을 batch label과 같은 type으로 맞춰주어야함
-                    object_predict = tf.nn.sigmoid(logits[0, :, :, 1])
-                    predict = tf.nn.sigmoid(logits[0, :, :, 0:1])
-                    predict = np.where(predict.numpy() >= 0.5, 1, 0)
-                    predict_temp = predict
-                    object_predict_predict = np.where(object_predict.numpy() >= 0.5, 1, 2)
-                    onject_predict_axis = np.where(object_predict_predict==2)   # 2 배경성분이 있는 축만 가지고 옴
-                    predict_temp[onject_predict_axis] = 2
+                    logits = run_model(model, batch_image, False)
+                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
+                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
+                    crop_image = crop_images[j]
+                    weed_image = weed_images[j]
+                    crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
+                    weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
 
-                    #batch_image = tf.expand_dims(batch_images[j], 0)
-                    #predict = run_model(model, batch_image, False) # type을 batch label과 같은 type으로 맞춰주어야함
-                    #predict = tf.nn.sigmoid(predict[0, :, :, 0:1])
-                    #predict = np.where(predict.numpy() >= 0.5, 1, 0)
+                    predict_image = np.where(crop_image == 1, 0, 2)
+                    predict_image = np.where(weed_image == 2, 1, predict_image)    
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
                     batch_label = np.where(batch_label == FLAGS.ignore_label, 2, batch_label)    # 2 is void
                     batch_label = np.where(batch_label == 255, 0, batch_label)
                     batch_label = np.where(batch_label == 128, 1, batch_label)
-                    ignore_label_axis = np.where(batch_label==2)   # 출력은 x,y axis로 나옴!
-                    predict[ignore_label_axis] = 2
 
-                    miou_, crop_iou_, weed_iou_ = Measurement(predict=predict_temp,
+                    miou_, crop_iou_, weed_iou_ = Measurement(predict=predict_image,
                                         label=batch_label, 
                                         shape=[FLAGS.img_size*FLAGS.img_size, ], 
                                         total_classes=FLAGS.total_classes).MIOU()
-                    f1_score_, recall_ = Measurement(predict=predict_temp,
+                    f1_score_, recall_ = Measurement(predict=predict_image,
                                             label=batch_label,
                                             shape=[FLAGS.img_size*FLAGS.img_size, ],
                                             total_classes=FLAGS.total_classes).F1_score_and_recall()
-                    tdr_ = Measurement(predict=predict_temp,
+                    tdr_ = Measurement(predict=predict_image,
                                             label=batch_label,
                                             shape=[FLAGS.img_size*FLAGS.img_size, ],
                                             total_classes=FLAGS.total_classes).TDR()
@@ -355,36 +356,31 @@ def main():
                 batch_labels = tf.squeeze(batch_labels, -1)
                 for j in range(1):
                     batch_image = tf.expand_dims(batch_images[j], 0)
-                    logits = run_model(model, batch_image, False) # type을 batch label과 같은 type으로 맞춰주어야함
-                    object_predict = tf.nn.sigmoid(logits[0, :, :, 1])
-                    predict = tf.nn.sigmoid(logits[0, :, :, 0:1])
-                    predict = np.where(predict.numpy() >= 0.5, 1, 0)
-                    predict_temp = predict
-                    object_predict_predict = np.where(object_predict.numpy() >= 0.5, 1, 2)
-                    onject_predict_axis = np.where(object_predict_predict==2)   # 2 배경성분이 있는 축만 가지고 옴
-                    predict_temp[onject_predict_axis] = 2
+                    logits = run_model(model, batch_image, False)
+                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
+                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
+                    crop_image = crop_images[j]
+                    weed_image = weed_images[j]
+                    crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
+                    weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
 
-                    #batch_image = tf.expand_dims(batch_images[j], 0)
-                    #predict = run_model(model, batch_image, False) # type을 batch label과 같은 type으로 맞춰주어야함
-                    #predict = tf.nn.sigmoid(predict[0, :, :, 0:1])
-                    #predict = np.where(predict.numpy() >= 0.5, 1, 0)
+                    predict_image = np.where(crop_image == 1, 0, 2)
+                    predict_image = np.where(weed_image == 2, 1, predict_image)    
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
                     batch_label = np.where(batch_label == FLAGS.ignore_label, 2, batch_label)    # 2 is void
                     batch_label = np.where(batch_label == 255, 0, batch_label)
                     batch_label = np.where(batch_label == 128, 1, batch_label)
-                    ignore_label_axis = np.where(batch_label==2)   # 출력은 x,y axis로 나옴!
-                    predict[ignore_label_axis] = 2
 
-                    miou_, crop_iou_, weed_iou_ = Measurement(predict=predict_temp,
+                    miou_, crop_iou_, weed_iou_ = Measurement(predict=predict_image,
                                         label=batch_label, 
                                         shape=[FLAGS.img_size*FLAGS.img_size, ], 
                                         total_classes=FLAGS.total_classes).MIOU()
-                    f1_score_, recall_ = Measurement(predict=predict_temp,
+                    f1_score_, recall_ = Measurement(predict=predict_image,
                                             label=batch_label,
                                             shape=[FLAGS.img_size*FLAGS.img_size, ],
                                             total_classes=FLAGS.total_classes).F1_score_and_recall()
-                    tdr_ = Measurement(predict=predict_temp,
+                    tdr_ = Measurement(predict=predict_image,
                                             label=batch_label,
                                             shape=[FLAGS.img_size*FLAGS.img_size, ],
                                             total_classes=FLAGS.total_classes).TDR()
@@ -427,36 +423,31 @@ def main():
                 batch_labels = tf.squeeze(batch_labels, -1)
                 for j in range(1):
                     batch_image = tf.expand_dims(batch_images[j], 0)
-                    logits = run_model(model, batch_image, False) # type을 batch label과 같은 type으로 맞춰주어야함
-                    object_predict = tf.nn.sigmoid(logits[0, :, :, 1])
-                    predict = tf.nn.sigmoid(logits[0, :, :, 0:1])
-                    predict = np.where(predict.numpy() >= 0.5, 1, 0)
-                    predict_temp = predict
-                    object_predict_predict = np.where(object_predict.numpy() >= 0.5, 1, 2)
-                    onject_predict_axis = np.where(object_predict_predict==2)   # 2 배경성분이 있는 축만 가지고 옴
-                    predict_temp[onject_predict_axis] = 2
+                    logits = run_model(model, batch_image, False)
+                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
+                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
+                    crop_image = crop_images[j]
+                    weed_image = weed_images[j]
+                    crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
+                    weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
 
-                    #batch_image = tf.expand_dims(batch_images[j], 0)
-                    #predict = run_model(model, batch_image, False) # type을 batch label과 같은 type으로 맞춰주어야함
-                    #predict = tf.nn.sigmoid(predict[0, :, :, 0:1])
-                    #predict = np.where(predict.numpy() >= 0.5, 1, 0)
+                    predict_image = np.where(crop_image == 1, 0, 2)
+                    predict_image = np.where(weed_image == 2, 1, predict_image)    
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
                     batch_label = np.where(batch_label == FLAGS.ignore_label, 2, batch_label)    # 2 is void
                     batch_label = np.where(batch_label == 255, 0, batch_label)
                     batch_label = np.where(batch_label == 128, 1, batch_label)
-                    ignore_label_axis = np.where(batch_label==2)   # 출력은 x,y axis로 나옴!
-                    predict[ignore_label_axis] = 2
 
-                    miou_, crop_iou_, weed_iou_ = Measurement(predict=predict_temp,
+                    miou_, crop_iou_, weed_iou_ = Measurement(predict=predict_image,
                                         label=batch_label, 
                                         shape=[FLAGS.img_size*FLAGS.img_size, ], 
                                         total_classes=FLAGS.total_classes).MIOU()
-                    f1_score_, recall_ = Measurement(predict=predict_temp,
+                    f1_score_, recall_ = Measurement(predict=predict_image,
                                             label=batch_label,
                                             shape=[FLAGS.img_size*FLAGS.img_size, ],
                                             total_classes=FLAGS.total_classes).F1_score_and_recall()
-                    tdr_ = Measurement(predict=predict_temp,
+                    tdr_ = Measurement(predict=predict_image,
                                             label=batch_label,
                                             shape=[FLAGS.img_size*FLAGS.img_size, ],
                                             total_classes=FLAGS.total_classes).TDR()
