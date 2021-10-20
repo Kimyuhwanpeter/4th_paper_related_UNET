@@ -235,13 +235,13 @@ def main():
                 if count % 100 == 0:
 
                     logits = run_model(model, batch_images, False)
-                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
-                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
                     for i in range(FLAGS.batch_size):
-                        crop_image = crop_images[i]
-                        weed_image = weed_images[i]
-                        crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-                        weed_image = np.where(weed_image.numpy() >= 0.5, 2, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
+                        logit = logits[i]
+                        crop_ = tf.nn.sigmoid(logit[:, :, 0:1])
+                        weed_ = tf.nn.sigmoid(logit[:, :, 1:])
+
+                        crop_image = np.where(crop_.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
+                        weed_image = np.where(weed_.numpy() >= 0.5, 2, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
 
                         predict_image = np.where(crop_image == 1, 0, 2) # 이건 출력할때 쓰는것
                         predict_image = np.where(weed_image == 2, 1, predict_image)    # 이건 출력할때 쓰는것
