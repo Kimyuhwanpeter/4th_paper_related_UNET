@@ -123,21 +123,19 @@ def dice_loss(y_true, y_pred):
 
     return 1 - numerator / denominator
 
-def cal_loss(model, images, crop_labels, weed_labels):
+def cal_loss(model, images, batch_labels):
 
     with tf.GradientTape() as tape:
 
-        crop_labels = tf.reshape(crop_labels, [-1,])
-        weed_labels = tf.reshape(weed_labels, [-1,])
+        batch_labels = tf.reshape(batch_labels, [-1,])
 
         logits = run_model(model, images, True)
-        crop_logits = logits[:, :, :, 0:1]
-        weed_logits = logits[:, :, :, 1:]
-        crop_logits = tf.reshape(crop_logits, [-1,])
-        weed_logits = tf.reshape(weed_logits, [-1,])
+        logits = tf.reshape(logits, [-1, FLAGS.total_classes])
 
-        loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(crop_labels, crop_logits) \
-            + tf.keras.losses.BinaryCrossentropy(from_logits=True)(weed_labels, weed_logits)
+        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(batch_labels, logits)
+
+        # print(tf.keras.losses.BinaryCrossentropy(from_logits=True)(crop_labels, crop_logits))
+        # print(tf.keras.losses.BinaryCrossentropy(from_logits=True)(weed_labels, weed_logits))
        
     grads = tape.gradient(loss, model.trainable_variables)
     optim.apply_gradients(zip(grads, model.trainable_variables))
@@ -152,7 +150,7 @@ def main():
     # 학습이미지에 대해 online augmentation을 진행--> 전처리로서 필터링을 하던지 해서 , 피사체에 대한 high frequency 성분을
     # 가지고오자
     #model = PFB_model(input_shape=(FLAGS.img_size, FLAGS.img_size, 3), OUTPUT_CHANNELS=FLAGS.total_classes-1)\
-    model = Unet(input_shape=(FLAGS.img_size, FLAGS.img_size, 3), classes=FLAGS.total_classes-1)
+    model = Unet(input_shape=(FLAGS.img_size, FLAGS.img_size, 3), classes=FLAGS.total_classes)
 
     #out = model.get_layer("activation_decoder_2_upsample").output
     #out = tf.keras.layers.Conv2D(FLAGS.total_classes-1, (1,1), name="output_layer")(out)
@@ -222,13 +220,13 @@ def main():
                 batch_labels = np.where(batch_labels == 255, 0, batch_labels)
                 batch_labels = np.where(batch_labels == 128, 1, batch_labels)
 
-                crop_labels = np.where(batch_labels == 0, 1, 0)
-                weed_labels = np.where(batch_labels == 1, 1, 0)
+                # crop_labels = np.where(batch_labels == 0, 1, 0)
+                # weed_labels = np.where(batch_labels == 1, 1, 0)
 
-                crop_labels = np.squeeze(crop_labels, -1)
-                weed_labels = np.squeeze(weed_labels, -1)
+                # crop_labels = np.squeeze(crop_labels, -1)
+                # weed_labels = np.squeeze(weed_labels, -1)
 
-                loss = cal_loss(model, batch_images, crop_labels, weed_labels)  # loss까지는 다했고 내일 test iou뽑는 부분코드 고쳐야함!
+                loss = cal_loss(model, batch_images, batch_labels)  # loss까지는 다했고 내일 test iou뽑는 부분코드 고쳐야함!
                 if count % 10 == 0:
                     print("Epoch: {} [{}/{}] loss = {}".format(epoch, step+1, tr_idx, loss))
 
@@ -237,23 +235,13 @@ def main():
                     logits = run_model(model, batch_images, False)
                     for i in range(FLAGS.batch_size):
                         logit = logits[i]
-                        crop_ = tf.nn.sigmoid(logit[:, :, 0:1])
-                        weed_ = tf.nn.sigmoid(logit[:, :, 1:])
-
-                        crop_image = np.where(crop_.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-                        weed_image = np.where(weed_.numpy() >= 0.5, 2, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-
-                        predict_image = np.where(crop_image == 1, 0, 2) # 이건 출력할때 쓰는것
-                        predict_image = np.where(weed_image == 2, 1, predict_image)    # 이건 출력할때 쓰는것
-
+                        logit = tf.nn.softmax(logit, -1)
+                        predict_image = tf.argmax(logit, -1)
+                        
                         label = batch_labels[i]
                         label = np.squeeze(label, -1)
-                        # label = np.where(label == FLAGS.ignore_label, 2, label)    # 2 is void
-                        # label = np.where(label == 255, 0, label)
-                        # label = np.where(label == 128, 1, label)
                         
                         pred_mask_color = color_map[predict_image]  # 논문그림처럼 할것!
-                        pred_mask_color = np.squeeze(pred_mask_color, 2)
                         
                         label = np.expand_dims(label, -1)
                         label = np.concatenate((label, label, label), -1)
@@ -262,8 +250,10 @@ def main():
                         label_mask_color = np.where(label == np.array([1,1,1], dtype=np.uint8), np.array([0, 0, 255], dtype=np.uint8), label_mask_color)
 
                         temp_img = predict_image
+                        temp_img = np.expand_dims(temp_img, -1)
+                        temp_img2 = temp_img
                         temp_img = np.concatenate((temp_img, temp_img, temp_img), -1)
-                        image = np.concatenate((predict_image, predict_image, predict_image), -1)
+                        image = np.concatenate((temp_img2, temp_img2, temp_img2), -1)
                         pred_mask_warping = np.where(temp_img == np.array([2,2,2], dtype=np.uint8), print_images[i], image)
                         pred_mask_warping = np.where(temp_img == np.array([0,0,0], dtype=np.uint8), np.array([255, 0, 0], dtype=np.uint8), pred_mask_warping)
                         pred_mask_warping = np.where(temp_img == np.array([1,1,1], dtype=np.uint8), np.array([0, 0, 255], dtype=np.uint8), pred_mask_warping)
@@ -289,15 +279,8 @@ def main():
                 for j in range(FLAGS.batch_size):
                     batch_image = tf.expand_dims(batch_images[j], 0)
                     logits = run_model(model, batch_image, False)
-                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
-                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
-                    crop_image = crop_images
-                    weed_image = weed_images
-                    crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-                    weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-
-                    predict_image = np.where(crop_image == 1, 0, 2)
-                    predict_image = np.where(weed_image == 2, 1, predict_image)    
+                    logits = tf.nn.softmax(logits, -1)
+                    predict_image = tf.argmax(logits, -1)
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
                     batch_label = np.where(batch_label == FLAGS.ignore_label, 2, batch_label)    # 2 is void
@@ -361,15 +344,8 @@ def main():
                 for j in range(1):
                     batch_image = tf.expand_dims(batch_images[j], 0)
                     logits = run_model(model, batch_image, False)
-                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
-                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
-                    crop_image = crop_images[j]
-                    weed_image = weed_images[j]
-                    crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-                    weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-
-                    predict_image = np.where(crop_image == 1, 0, 2)
-                    predict_image = np.where(weed_image == 2, 1, predict_image)    
+                    logits = tf.nn.softmax(logits, -1)
+                    predict_image = tf.argmax(logits, -1)
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
                     batch_label = np.where(batch_label == FLAGS.ignore_label, 2, batch_label)    # 2 is void
@@ -428,15 +404,8 @@ def main():
                 for j in range(1):
                     batch_image = tf.expand_dims(batch_images[j], 0)
                     logits = run_model(model, batch_image, False)
-                    crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
-                    weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
-                    crop_image = crop_images[j]
-                    weed_image = weed_images[j]
-                    crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-                    weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
-
-                    predict_image = np.where(crop_image == 1, 0, 2)
-                    predict_image = np.where(weed_image == 2, 1, predict_image)    
+                    logits = tf.nn.softmax(logits, -1)
+                    predict_image = tf.argmax(logits, -1)
 
                     batch_label = tf.cast(batch_labels[j], tf.uint8).numpy()
                     batch_label = np.where(batch_label == FLAGS.ignore_label, 2, batch_label)    # 2 is void
