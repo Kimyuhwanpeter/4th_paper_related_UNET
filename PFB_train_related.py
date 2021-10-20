@@ -11,21 +11,21 @@ import os
 
 FLAGS = easydict.EasyDict({"img_size": 512,
 
-                           "train_txt_path": "D:/[1]DB/[5]4th_paper_DB/crop_weed/datasets_IJRR2017/train.txt",
+                           "train_txt_path": "/yuhwan/yuhwan/Dataset/Segmentation/Crop_weed/datasets_IJRR2017/train.txt",
 
-                           "val_txt_path": "D:/[1]DB/[5]4th_paper_DB/crop_weed/datasets_IJRR2017/val.txt",
+                           "val_txt_path": "/yuhwan/yuhwan/Dataset/Segmentation/Crop_weed/datasets_IJRR2017/val.txt",
 
-                           "test_txt_path": "D:/[1]DB/[5]4th_paper_DB/crop_weed/CropWeed Field Image Dataset (CWFID)/dataset-1.0/test.txt",
+                           "test_txt_path": "/yuhwan/yuhwan/Dataset/Segmentation/Crop_weed/datasets_IJRR2017/test.txt",
                            
-                           "label_path": "D:/[1]DB/[5]4th_paper_DB/crop_weed/CropWeed Field Image Dataset (CWFID)/dataset-1.0/aug_train_masks/",
+                           "label_path": "/yuhwan/yuhwan/Dataset/Segmentation/Crop_weed/datasets_IJRR2017/raw_aug_gray_mask/",
                            
-                           "image_path": "D:/[1]DB/[5]4th_paper_DB/crop_weed/CropWeed Field Image Dataset (CWFID)/dataset-1.0/aug_train_images/",
+                           "image_path": "/yuhwan/yuhwan/Dataset/Segmentation/Crop_weed/datasets_IJRR2017/raw_aug_rgb_img/",
                            
                            "pre_checkpoint": False,
                            
                            "pre_checkpoint_path": "C:/Users/Yuhwan/Downloads/154/154",
                            
-                           "lr": 0.0001,
+                           "lr": 0.00001,
 
                            "min_lr": 1e-7,
                            
@@ -35,13 +35,13 @@ FLAGS = easydict.EasyDict({"img_size": 512,
 
                            "ignore_label": 0,
 
-                           "batch_size": 4,
+                           "batch_size": 2,
 
-                           "sample_images": "/yuhwan/yuhwan/checkpoint/Segmenation/V2/sample_images",
+                           "sample_images": "/yuhwan/yuhwan/checkpoint/Segmenation/related_UNET/BoniRob/sample_images",
 
-                           "save_checkpoint": "/yuhwan/yuhwan/checkpoint/Segmenation/V2/checkpoint",
+                           "save_checkpoint": "/yuhwan/yuhwan/checkpoint/Segmenation/related_UNET/BoniRob/checkpoint",
 
-                           "save_print": "/yuhwan/yuhwan/checkpoint/Segmenation/V2/train_out.txt",
+                           "save_print": "/yuhwan/yuhwan/checkpoint/Segmenation/related_UNET/BoniRob/train_out.txt",
 
                            "test_images": "D:/[1]DB/[5]4th_paper_DB/crop_weed/V2/test_images_CWFID",
 
@@ -222,8 +222,8 @@ def main():
                 batch_labels = np.where(batch_labels == 255, 0, batch_labels)
                 batch_labels = np.where(batch_labels == 128, 1, batch_labels)
 
-                crop_labels = np.where(batch_labels == 1, 1, 0)
-                weed_labels = np.where(batch_labels == 0, 1, 0)
+                crop_labels = np.where(batch_labels == 0, 1, 0)
+                weed_labels = np.where(batch_labels == 1, 1, 0)
 
                 crop_labels = np.squeeze(crop_labels, -1)
                 weed_labels = np.squeeze(weed_labels, -1)
@@ -247,6 +247,10 @@ def main():
                         predict_image = np.where(weed_image == 2, 1, predict_image)    # 이건 출력할때 쓰는것
 
                         label = batch_labels[i]
+                        label = np.squeeze(label, -1)
+                        # label = np.where(label == FLAGS.ignore_label, 2, label)    # 2 is void
+                        # label = np.where(label == 255, 0, label)
+                        # label = np.where(label == 128, 1, label)
                         
                         pred_mask_color = color_map[predict_image]  # 논문그림처럼 할것!
                         pred_mask_color = np.squeeze(pred_mask_color, 2)
@@ -287,8 +291,8 @@ def main():
                     logits = run_model(model, batch_image, False)
                     crop_images = tf.nn.sigmoid(logits[:, :, :, 0:1])
                     weed_images = tf.nn.sigmoid(logits[:, :, :, 1:])
-                    crop_image = crop_images[j]
-                    weed_image = weed_images[j]
+                    crop_image = crop_images
+                    weed_image = weed_images
                     crop_image = np.where(crop_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
                     weed_image = np.where(weed_image.numpy() >= 0.5, 1, 0).astype(np.uint8)  # TP, NP, FP, FN 을 구할때는 이게 있어야한다
 
